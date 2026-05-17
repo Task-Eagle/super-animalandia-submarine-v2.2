@@ -1,0 +1,708 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Animalandia Submarine Explorer Ultimate</title>
+
+<style>
+* {
+    margin: 0;
+    padding: 0;
+    box-sizing: border-box;
+    user-select: none;
+}
+
+html, body {
+    width: 100%;
+    height: 100%;
+    overflow: hidden;
+    background: #02070d;
+    font-family: Inter, Segoe UI, sans-serif;
+}
+
+body {
+    perspective: 1400px;
+}
+
+#game-container {
+    position: relative;
+    width: 100%;
+    height: 100%;
+    overflow: hidden;
+}
+
+canvas {
+    width: 100%;
+    height: 100%;
+    display: block;
+}
+
+#cockpit {
+    position: absolute;
+    inset: 0;
+    pointer-events: none;
+}
+
+#glass-frame {
+    position: absolute;
+    inset: 20px;
+    border-radius: 40px;
+    border: 18px solid #324454;
+    box-shadow:
+        inset 0 0 140px rgba(0,255,255,0.18),
+        inset 0 0 25px rgba(255,255,255,0.08),
+        0 0 40px rgba(0,0,0,0.8);
+}
+
+#dashboard {
+    position: absolute;
+    bottom: 0;
+    width: 100%;
+    height: 250px;
+    background:
+        linear-gradient(to bottom, #223240, #10161d 70%);
+    border-top: 5px solid #465b70;
+    display: flex;
+    align-items: center;
+    justify-content: space-around;
+    padding: 20px;
+    box-shadow: 0 -10px 30px rgba(0,0,0,0.9);
+}
+
+.panel {
+    background:
+        linear-gradient(to bottom, #18232d, #0c1116);
+    border: 2px solid #30475a;
+    border-radius: 20px;
+    padding: 18px;
+    box-shadow:
+        inset 0 0 10px rgba(255,255,255,0.03),
+        0 6px 20px rgba(0,0,0,0.6);
+}
+
+.display {
+    color: #73ffe5;
+    min-width: 220px;
+    text-align: center;
+    background: #02131d;
+    border: 2px solid #00d0ff;
+    border-radius: 12px;
+    padding: 15px;
+}
+
+.display h3 {
+    color: #8fdfff;
+    font-size: 12px;
+    letter-spacing: 3px;
+}
+
+.display p {
+    font-size: 28px;
+    font-family: monospace;
+    margin-top: 8px;
+}
+
+.btn-grid {
+    display: grid;
+    grid-template-columns: repeat(3, 80px);
+    grid-template-rows: repeat(3, 80px);
+    gap: 10px;
+}
+
+.btn {
+    pointer-events: auto;
+    border: none;
+    border-radius: 16px;
+    cursor: pointer;
+    color: white;
+    font-weight: bold;
+    background:
+        linear-gradient(to bottom, #4f77a7, #23384c);
+    box-shadow:
+        inset 0 4px 10px rgba(255,255,255,0.08),
+        0 6px 0 #111821,
+        0 10px 20px rgba(0,0,0,0.6);
+}
+
+.btn.active {
+    transform: translateY(6px);
+    background:
+        linear-gradient(to bottom, #16222d, #0c1116);
+}
+
+#btn-up { grid-column: 2; }
+#btn-left { grid-column: 1; grid-row: 2; }
+#btn-right { grid-column: 3; grid-row: 2; }
+#btn-down { grid-column: 2; grid-row: 3; }
+
+#radar {
+    width: 180px;
+    height: 180px;
+    border-radius: 50%;
+    background:
+        radial-gradient(circle, #073f34 0%, #010907 75%);
+    border: 4px solid #1e8b72;
+    position: relative;
+    overflow: hidden;
+}
+
+#radar::before {
+    content: "";
+    position: absolute;
+    width: 50%;
+    height: 2px;
+    top: 50%;
+    left: 50%;
+    background: rgba(0,255,180,0.9);
+    transform-origin: left center;
+    animation: radarSweep 3s linear infinite;
+}
+
+@keyframes radarSweep {
+    from { transform: rotate(0deg); }
+    to { transform: rotate(360deg); }
+}
+
+input[type=range] {
+    transform: rotate(-90deg);
+    width: 180px;
+}
+
+#collision-alert {
+    position: absolute;
+    inset: 0;
+    pointer-events: none;
+}
+</style>
+</head>
+
+<body>
+<div id="game-container">
+
+<canvas id="subCanvas"></canvas>
+
+<div id="cockpit">
+    <div id="glass-frame"></div>
+    <div id="collision-alert"></div>
+</div>
+
+<div id="dashboard">
+
+    <div class="panel">
+        <div class="btn-grid">
+            <button class="btn" id="btn-up">SURF</button>
+            <button class="btn" id="btn-left">LEFT</button>
+            <button class="btn" id="btn-right">RIGHT</button>
+            <button class="btn" id="btn-down">DEEP</button>
+        </div>
+    </div>
+
+    <div class="panel display">
+        <h3>DEPTH</h3>
+        <p id="depth-txt">150 m</p>
+
+        <h3 style="margin-top:18px;">SPEED</h3>
+        <p id="speed-txt">12 kn</p>
+
+        <h3 style="margin-top:18px;">TIME</h3>
+        <p id="time-txt">DAY</p>
+    </div>
+
+    <div class="panel">
+        <div id="radar"></div>
+    </div>
+
+    <div class="panel">
+        <input type="range" min="0" max="6" step="0.5" value="2" id="throttle">
+    </div>
+
+</div>
+</div>
+
+<script>
+const canvas = document.getElementById('subCanvas');
+const ctx = canvas.getContext('2d');
+
+const depthTxt = document.getElementById('depth-txt');
+const speedTxt = document.getElementById('speed-txt');
+const timeTxt = document.getElementById('time-txt');
+const throttle = document.getElementById('throttle');
+const collisionAlert = document.getElementById('collision-alert');
+
+function resize() {
+    canvas.width = innerWidth;
+    canvas.height = innerHeight;
+}
+window.addEventListener('resize', resize);
+resize();
+
+const controls = {
+    up:false,
+    down:false,
+    left:false,
+    right:false
+};
+
+function setupButton(id, key) {
+    const btn = document.getElementById(id);
+
+    const start = (e) => {
+        e.preventDefault();
+        controls[key] = true;
+        btn.classList.add('active');
+    };
+
+    const end = () => {
+        controls[key] = false;
+        btn.classList.remove('active');
+    };
+
+    btn.addEventListener('mousedown', start);
+    btn.addEventListener('mouseup', end);
+    btn.addEventListener('mouseleave', end);
+
+    btn.addEventListener('touchstart', start, { passive:false });
+    btn.addEventListener('touchend', end);
+}
+
+setupButton('btn-up', 'up');
+setupButton('btn-down', 'down');
+setupButton('btn-left', 'left');
+setupButton('btn-right', 'right');
+
+window.addEventListener('keydown', e => {
+    const key = e.key.toLowerCase();
+
+    if(key === 'arrowup' || key === 'w') controls.up = true;
+    if(key === 'arrowdown' || key === 's') controls.down = true;
+    if(key === 'arrowleft' || key === 'a') controls.left = true;
+    if(key === 'arrowright' || key === 'd') controls.right = true;
+});
+
+window.addEventListener('keyup', e => {
+    const key = e.key.toLowerCase();
+
+    if(key === 'arrowup' || key === 'w') controls.up = false;
+    if(key === 'arrowdown' || key === 's') controls.down = false;
+    if(key === 'arrowleft' || key === 'a') controls.left = false;
+    if(key === 'arrowright' || key === 'd') controls.right = false;
+});
+
+function rand(min,max){
+    return Math.random()*(max-min)+min;
+}
+
+const MAX_DEPTH = 400;
+const SURFACE_DEPTH = 0;
+
+let depth = 150;
+let horizonX = 0;
+let cameraRoll = 0;
+let stormAmount = 0;
+
+const maxZ = 1000;
+
+const fish = [];
+const seagulls = [];
+const seaLions = [];
+const ruins = [];
+const treasureCaves = [];
+
+class Fish {
+    constructor(){
+        this.reset(true);
+    }
+
+    reset(random=true){
+        this.x = rand(-700,700);
+        this.y = rand(-180,180);
+        this.z = random ? rand(50,maxZ) : maxZ;
+        this.size = rand(12,40);
+        this.color = `hsl(${rand(170,240)},80%,65%)`;
+    }
+
+    update(speed){
+        this.z -= speed;
+
+        if(this.z < 10){
+            this.reset();
+        }
+    }
+
+    draw(){
+        const scale = canvas.width / this.z;
+
+        const x = (this.x - horizonX) * scale + canvas.width/2;
+        const y = this.y * scale + canvas.height/2;
+        const s = this.size * scale;
+
+        ctx.fillStyle = this.color;
+
+        ctx.beginPath();
+        ctx.ellipse(x,y,s,s*0.5,0,0,Math.PI*2);
+        ctx.fill();
+
+        ctx.beginPath();
+        ctx.moveTo(x+s,y);
+        ctx.lineTo(x+s+s*0.6,y-s*0.5);
+        ctx.lineTo(x+s+s*0.6,y+s*0.5);
+        ctx.fill();
+    }
+}
+
+class Seagull {
+    constructor(){
+        this.reset(true);
+    }
+
+    reset(random=true){
+        this.x = rand(-1000,1000);
+        this.y = rand(-250,-50);
+        this.z = random ? rand(50,maxZ) : maxZ;
+        this.size = rand(12,24);
+        this.flap = rand(0,10);
+    }
+
+    update(speed){
+        this.z -= speed*0.5;
+        this.flap += 0.15;
+
+        if(this.z<10){
+            this.reset();
+        }
+    }
+
+    draw(){
+        const scale = canvas.width / this.z;
+
+        const x = (this.x-horizonX)*scale + canvas.width/2;
+        const y = this.y*scale + canvas.height/2;
+        const s = this.size*scale;
+
+        ctx.strokeStyle='white';
+        ctx.lineWidth=Math.max(1,s*0.08);
+
+        ctx.beginPath();
+        ctx.moveTo(x-s,y);
+        ctx.quadraticCurveTo(x,y-Math.sin(this.flap)*s,x+s,y);
+        ctx.stroke();
+    }
+}
+
+class SeaLionRock {
+    constructor(){
+        this.reset();
+    }
+
+    reset(){
+        this.x = rand(-900,900);
+        this.y = 150;
+        this.z = rand(50,maxZ);
+        this.size = rand(40,90);
+    }
+
+    update(speed){
+        this.z -= speed;
+
+        if(this.z < 10){
+            this.reset();
+        }
+    }
+
+    draw(){
+        const scale = canvas.width / this.z;
+
+        const x = (this.x-horizonX)*scale + canvas.width/2;
+        const y = this.y*scale + canvas.height/2;
+        const s = this.size*scale;
+
+        ctx.fillStyle='#5a4d43';
+
+        ctx.beginPath();
+        ctx.moveTo(x-s,y+s*0.4);
+        ctx.lineTo(x-s*0.4,y-s*0.5);
+        ctx.lineTo(x+s*0.6,y-s*0.2);
+        ctx.lineTo(x+s,y+s*0.4);
+        ctx.fill();
+
+        ctx.fillStyle='#8a5a3b';
+        ctx.beginPath();
+        ctx.ellipse(x,y-s*0.2,s*0.25,s*0.12,0,0,Math.PI*2);
+        ctx.fill();
+    }
+}
+
+class Ruin {
+    constructor(){
+        this.x = rand(-900,900);
+        this.y = 180;
+        this.z = rand(50,maxZ);
+        this.size = rand(60,120);
+    }
+
+    update(speed){
+        this.z -= speed;
+
+        if(this.z<10){
+            this.z=maxZ;
+            this.x=rand(-900,900);
+        }
+    }
+
+    draw(){
+        const scale = canvas.width/this.z;
+        const x=(this.x-horizonX)*scale+canvas.width/2;
+        const y=this.y*scale+canvas.height/2;
+        const s=this.size*scale;
+
+        ctx.fillStyle='#46576c';
+        ctx.fillRect(x-s*0.5,y-s,s,s);
+
+        ctx.fillStyle='#2b3744';
+        ctx.fillRect(x-s*0.2,y-s*0.7,s*0.15,s*0.7);
+        ctx.fillRect(x+s*0.05,y-s*0.7,s*0.15,s*0.7);
+    }
+}
+
+class TreasureCave {
+    constructor(){
+        this.x=rand(-900,900);
+        this.y=220;
+        this.z=rand(100,maxZ);
+    }
+
+    update(speed){
+        this.z -= speed;
+
+        if(this.z<10){
+            this.z=maxZ;
+            this.x=rand(-900,900);
+        }
+    }
+
+    draw(){
+        const scale = canvas.width/this.z;
+        const x=(this.x-horizonX)*scale+canvas.width/2;
+        const y=this.y*scale+canvas.height/2;
+
+        ctx.fillStyle='#1f1306';
+        ctx.beginPath();
+        ctx.arc(x,y,60*scale,0,Math.PI,true);
+        ctx.fill();
+
+        ctx.fillStyle='gold';
+
+        for(let i=0;i<6;i++){
+            ctx.fillRect(x+i*4*scale,y-10*scale,4*scale,4*scale);
+        }
+    }
+}
+
+for(let i=0;i<25;i++) fish.push(new Fish());
+for(let i=0;i<10;i++) seagulls.push(new Seagull());
+for(let i=0;i<6;i++) seaLions.push(new SeaLionRock());
+for(let i=0;i<8;i++) ruins.push(new Ruin());
+for(let i=0;i<6;i++) treasureCaves.push(new TreasureCave());
+
+const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+
+function whaleSong(){
+    const osc = audioCtx.createOscillator();
+    const gain = audioCtx.createGain();
+
+    osc.type='sine';
+    osc.frequency.setValueAtTime(120,audioCtx.currentTime);
+    osc.frequency.linearRampToValueAtTime(60,audioCtx.currentTime+2);
+
+    gain.gain.setValueAtTime(0.03,audioCtx.currentTime);
+    gain.gain.linearRampToValueAtTime(0.001,audioCtx.currentTime+2);
+
+    osc.connect(gain);
+    gain.connect(audioCtx.destination);
+
+    osc.start();
+    osc.stop(audioCtx.currentTime+2);
+}
+
+setInterval(()=>{
+    if(depth > 120 && Math.random()>0.5){
+        whaleSong();
+    }
+},18000);
+
+function drawSeaFloor(){
+    const floorY = canvas.height*0.72;
+
+    const grad = ctx.createLinearGradient(0,floorY,0,canvas.height);
+    grad.addColorStop(0,'#57452a');
+    grad.addColorStop(1,'#2b2012');
+
+    ctx.fillStyle = grad;
+
+    ctx.beginPath();
+    ctx.moveTo(0, floorY);
+
+    for(let x=0;x<canvas.width;x+=20){
+        const y = floorY + Math.sin(x*0.01 + Date.now()*0.0008)*8;
+        ctx.lineTo(x,y);
+    }
+
+    ctx.lineTo(canvas.width, canvas.height);
+    ctx.lineTo(0, canvas.height);
+    ctx.fill();
+}
+
+function drawSurface(){
+    const waterY = canvas.height*0.55;
+
+    ctx.fillStyle='rgba(0,90,140,0.45)';
+    ctx.fillRect(0,waterY,canvas.width,canvas.height-waterY);
+
+    ctx.strokeStyle='rgba(255,255,255,0.8)';
+    ctx.lineWidth=3;
+
+    ctx.beginPath();
+
+    for(let x=0;x<canvas.width;x+=10){
+        const y = waterY + Math.sin(x*0.03 + Date.now()*0.002)*8;
+        ctx.lineTo(x,y);
+    }
+
+    ctx.stroke();
+}
+
+function drawStorm(level){
+    if(level < 0.1) return;
+
+    ctx.fillStyle=`rgba(20,20,35,${level*0.35})`;
+    ctx.fillRect(0,0,canvas.width,canvas.height);
+
+    if(Math.random()>0.992){
+        ctx.fillStyle='rgba(255,255,255,0.8)';
+        ctx.fillRect(0,0,canvas.width,canvas.height);
+    }
+}
+
+function loop(){
+
+    const speed = parseFloat(throttle.value);
+
+    if(controls.left) horizonX -= 3;
+    if(controls.right) horizonX += 3;
+
+    if(controls.up) depth -= 0.8;
+    if(controls.down) depth += 0.8;
+
+    depth = Math.max(SURFACE_DEPTH, Math.min(MAX_DEPTH, depth));
+
+    cameraRoll += (((controls.right?1:0)-(controls.left?1:0))*2-cameraRoll)*0.05;
+
+    const cycle = (Date.now() % 180000) / 180000;
+
+    let skyTop;
+    let skyBottom;
+
+    if(cycle < 0.5){
+        skyTop='#5fb8ff';
+        skyBottom='#d9f2ff';
+        timeTxt.innerText='DAY';
+    } else {
+        skyTop='#031225';
+        skyBottom='#11263f';
+        timeTxt.innerText='NIGHT';
+    }
+
+    stormAmount = Math.sin(Date.now()*0.0002)*0.5+0.5;
+
+    ctx.save();
+
+    ctx.translate(canvas.width/2,canvas.height/2);
+    ctx.rotate(cameraRoll*0.01);
+    ctx.translate(-canvas.width/2,-canvas.height/2);
+
+    const gradient = ctx.createLinearGradient(0,0,0,canvas.height);
+
+    if(depth === 0){
+        gradient.addColorStop(0,skyTop);
+        gradient.addColorStop(1,skyBottom);
+    } else {
+        gradient.addColorStop(0,'#0c4269');
+        gradient.addColorStop(1,'#02111f');
+    }
+
+    ctx.fillStyle = gradient;
+    ctx.fillRect(0,0,canvas.width,canvas.height);
+
+    if(depth > 0){
+
+        ctx.fillStyle=`rgba(0,40,60,${Math.min(depth/1000,0.35)})`;
+        ctx.fillRect(0,0,canvas.width,canvas.height);
+
+        drawSeaFloor();
+
+        ctx.strokeStyle='rgba(120,220,255,0.05)';
+
+        for(let i=0;i<20;i++){
+            const y=(i*40+(Date.now()*0.05))%canvas.height;
+
+            ctx.beginPath();
+
+            for(let x=0;x<canvas.width;x+=40){
+                ctx.lineTo(x,y+Math.sin(x*0.02+Date.now()*0.002)*8);
+            }
+
+            ctx.stroke();
+        }
+
+        fish.forEach(f=>{
+            f.update(speed);
+            f.draw();
+        });
+
+        ruins.forEach(r=>{
+            r.update(speed);
+            r.draw();
+        });
+
+        treasureCaves.forEach(c=>{
+            c.update(speed);
+            c.draw();
+        });
+    }
+
+    if(depth === 0){
+
+        drawSurface();
+
+        seagulls.forEach(g=>{
+            g.update(speed);
+            g.draw();
+        });
+
+        seaLions.forEach(s=>{
+            s.update(speed);
+            s.draw();
+        });
+    }
+
+    drawStorm(stormAmount);
+
+    depthTxt.innerText = `${Math.floor(depth)} m`;
+    speedTxt.innerText = `${Math.floor(speed*8)} kn`;
+
+    if(depth >= MAX_DEPTH-5){
+        collisionAlert.style.background='rgba(255,0,0,0.18)';
+    } else {
+        collisionAlert.style.background='transparent';
+    }
+
+    ctx.restore();
+
+    requestAnimationFrame(loop);
+}
+
+loop();
+</script>
+</body>
+</html>
